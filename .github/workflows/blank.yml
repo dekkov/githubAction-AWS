@@ -26,6 +26,7 @@ jobs:
                 AWS_REGION: us-west-2
                 FUNCTION_NAME: testing1
                 IMAGE_URI: 992382457530.dkr.ecr.us-west-2.amazonaws.com/testing1:latest
+                ROLE_ARN: arn:aws:iam::992382457530:role/hoang
               run: |
                 set -e
 
