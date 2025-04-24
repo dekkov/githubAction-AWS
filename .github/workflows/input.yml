@@ -1,4 +1,4 @@
-name: Deploy Existing Image to Lambda
+name: Deploy Existing Image to Lambda with input
 
 on:
   workflow_dispatch:  # manual trigger or choose your own
