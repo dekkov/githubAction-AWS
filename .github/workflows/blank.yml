@@ -27,11 +27,24 @@ jobs:
                 FUNCTION_NAME: testing1
                 IMAGE_URI: 992382457530.dkr.ecr.us-west-2.amazonaws.com/testing1:latest
               run: |
-                aws lambda create-function \
-                  --function-name $FUNCTION_NAME \
-                  --package-type Image \
-                  --code ImageUri= $IMAGE_URI \
-                  --role arn:aws:iam::992382457530:role/hoang \
-                  --region us-west-2
+                set -e
+
+                echo "Checking if Lambda function '$FUNCTION_NAME' exists..."
+            
+                if aws lambda get-function --function-name "$FUNCTION_NAME" --region "$AWS_REGION" > /dev/null 2>&1; then
+                  echo "Function exists. Updating image..."
+                  aws lambda update-function-code \
+                    --function-name "$FUNCTION_NAME" \
+                    --image-uri "$IMAGE_URI" \
+                    --region "$AWS_REGION"
+                else
+                  echo "Function does not exist. Creating new Lambda..."
+                  aws lambda create-function \
+                    --function-name "$FUNCTION_NAME" \
+                    --package-type Image \
+                    --code "ImageUri=$IMAGE_URI" \
+                    --role "$ROLE_ARN" \
+                    --region "$AWS_REGION"
+                fi
 
     
