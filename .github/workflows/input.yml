@@ -1,0 +1,58 @@
+name: Deploy Existing Image to Lambda
+
+on:
+  workflow_dispatch:  # manual trigger or choose your own
+   inputs:
+      function_name:
+        required: true
+        default: 'Default lambda function'
+      image_uri:
+        required: true
+      role_arn:
+        required: true
+jobs:
+    deploy:
+        name: Deploy to ECR and update Lambda
+        runs-on: ubuntu-latest
+
+        steps:
+
+            - name: Configure AWS credentials
+              uses: aws-actions/configure-aws-credentials@v1
+              with:
+                  aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                  aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                  aws-region: us-west-2
+
+            - name: Login to Amazon ECR
+              id: login-ecr
+              uses: aws-actions/amazon-ecr-login@v1
+              
+            - name: Deploy prebuilt image to AWS Lambda
+              env:
+                AWS_REGION: us-west-2
+                FUNCTION_NAME: ${{ github.event.inputs.function_name }}
+                IMAGE_URI: ${{ github.event.inputs.image_uri }}
+                ROLE_ARN: ${{ github.event.inputs.role_arn }}
+              run: |
+                set -e
+
+                echo "Checking if Lambda function '$FUNCTION_NAME' exists..."
+            
+                if aws lambda get-function --function-name "$FUNCTION_NAME" --region "$AWS_REGION" > /dev/null 2>&1; then
+                  echo "Function exists. Updating image..."
+                  aws lambda update-function-code \
+                    --function-name "$FUNCTION_NAME" \
+                    --image-uri "$IMAGE_URI" \
+                    --region "$AWS_REGION"
+                else
+                  echo "Function does not exist. Creating new Lambda..."
+                  aws lambda create-function \
+                    --function-name "$FUNCTION_NAME" \
+                    --package-type Image \
+                    --code "ImageUri=$IMAGE_URI" \
+                    --role "$ROLE_ARN" \
+                    --region "$AWS_REGION"
+                fi
+
+    
