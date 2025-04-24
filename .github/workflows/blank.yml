@@ -27,9 +27,11 @@ jobs:
                 FUNCTION_NAME: testing1
                 IMAGE_URI: 992382457530.dkr.ecr.us-west-2.amazonaws.com/testing1:latest
               run: |
-                aws lambda update-function-code \
+                aws lambda create-function \
                   --function-name $FUNCTION_NAME \
-                  --image-uri $IMAGE_URI \
-                  --region $AWS_REGION
+                  --package-type Image \
+                  --code ImageUri= $IMAGE_URI \
+                  --role arn:aws:iam::992382457530:role/hoang \
+                  --region us-west-2
 
     
