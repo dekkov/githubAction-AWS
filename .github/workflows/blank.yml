@@ -24,7 +24,7 @@ jobs:
             - name: Deploy prebuilt image to AWS Lambda
               env:
                 AWS_REGION: us-west-2
-                FUNCTION_NAME: your-lambda-function-name
+                FUNCTION_NAME: testing1
                 IMAGE_URI: 992382457530.dkr.ecr.us-west-2.amazonaws.com/testing1:latest
               run: |
                 aws lambda update-function-code \
