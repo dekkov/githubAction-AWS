@@ -1,0 +1,53 @@
+name: One-to-One Push GitHub Secrets to AWS Secrets Manager
+
+on:
+  workflow_dispatch:
+    inputs:
+      github_secrets_list:
+        description: "Comma-separated GitHub Secret names to push (e.g., DB_USER,DB_PASS,API_KEY)"
+        required: true
+
+jobs:
+  one-to-one-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-west-2  # Change as needed
+
+      - name: Push each GitHub Secret to AWS Secret
+        run: |
+          IFS=',' read -ra SECRET_NAMES <<< "${{ github.event.inputs.github_secrets_list }}"
+
+          for secret_name in "${SECRET_NAMES[@]}"; do
+            secret_name_trimmed=$(echo "$secret_name" | xargs)  # trim whitespace
+
+            # Dynamically fetch secret value
+            secret_value="${{ secrets[secret_name_trimmed] }}"
+
+            if [ -z "$secret_value" ]; then
+              echo "❌ GitHub Secret '$secret_name_trimmed' is empty or not found!"
+              exit 1
+            fi
+
+            # Build AWS secret name (with optional prefix)
+            aws_secret_name="${{ github.event.inputs.aws_secret_prefix }}$secret_name_trimmed"
+
+            echo "➡️ Pushing $secret_name_trimmed → AWS Secrets Manager as $aws_secret_name"
+
+            aws secretsmanager create-secret \
+              --name "$aws_secret_name" \
+              --secret-string "$secret_value" \
+              || aws secretsmanager put-secret-value \
+              --secret-id "$aws_secret_name" \
+              --secret-string "$secret_value"
+
+            echo "✅ Synced $secret_name_trimmed → $aws_secret_name"
+          done
