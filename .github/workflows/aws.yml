@@ -16,6 +16,6 @@ jobs:
       - name: Echo all repository vars (non-sensitive)
         run: |
           echo "All repository vars:"
-          echo "$ALLMYVARS"
+          echo "$ALLMYSECRETS"
         env:
-          ALLMYVARS: ${{ toJSON(vars) }}
+          ALLMYSECRETS: ${{ toJSON(secrets) }}
