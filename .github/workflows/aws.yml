@@ -13,29 +13,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-west-2  # change to your AWS region
-
-      - name: Load GitHub Secret Value
-        id: load_secret
+      - name: Echo all repository vars (non-sensitive)
         run: |
-          SECRET_NAME="${{ github.event.inputs.secret_name }}"
-          # Dynamically get the secret (GitHub doesn't support dynamic secrets, so we do mapping)
-          case "$SECRET_NAME" in
-            MY_SECRET) echo "value=${{ secrets.MY_SECRET }}" >> $GITHUB_OUTPUT ;;
-            ANOTHER_SECRET) echo "value=${{ secrets.ANOTHER_SECRET }}" >> $GITHUB_OUTPUT ;;
-            *) echo "❌ Secret $SECRET_NAME is not mapped in workflow!"; exit 1 ;;
-          esac
-
-      - name: Put secret into AWS Secrets Manager
-        run: |
-          SECRET_NAME="${{ github.event.inputs.secret_name }}"
-          SECRET_VALUE="${{ steps.load_secret.outputs.value }}"
-
-          # Try to create the secret (ignore error if it exists)
-          aws secretsmanager create-secret --name "github/$SECRET_NAME" --secret-string "$SECRET_VALUE" || \
-          aws secretsmanager put-secret-value --secret-id "github/$SECRET_NAME" --secret-string "$SECRET_VALUE"
+          echo "All repository vars:"
+          echo "$ALLMYVARS"
+        env:
+          ALLMYVARS: ${{ toJSON(vars) }}
