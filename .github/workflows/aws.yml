@@ -1,21 +1,55 @@
-name: Sync GitHub Secret to AWS Secrets Manager
+name: Sync Selected GitHub Secrets to AWS Secrets Manager
 
 on:
   workflow_dispatch:
     inputs:
-      secret_name:
-        description: 'Name of the secret to sync (must match a GitHub secret)'
+      secret_names:
+        description: 'Comma-separated list of GitHub secret names to sync (e.g., DB_PASSWORD,API_KEY)'
         required: true
         type: string
 
+
 jobs:
-  sync_secret:
+  sync_secrets:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Echo all repository vars (non-sensitive)
-        run: |
-          echo "All repository vars:"
-          echo "$ALLMYSECRETS"
+
+      # 1. Configure AWS credentials
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-west-2 # Change to your AWS region
+
+      # 2. Loop through secrets
+      - name: Sync selected secrets to AWS Secrets Manager
+        id: sync-secrets
+        shell: bash
         env:
-          ALLMYSECRETS: ${{ toJSON(secrets) }}
+          INPUT_SECRET_NAMES: ${{ github.event.inputs.secret_names }}
+        run: |
+          set -e
+
+          # Prepare comma-separated list into an array
+          IFS=',' read -ra SECRETS <<< "$INPUT_SECRET_NAMES"
+
+          for SECRET_NAME in "${SECRETS[@]}"; do
+            # Remove whitespace
+            SECRET_KEY=$(echo "$SECRET_NAME" | xargs)
+
+            # Dynamically reference the GitHub Action secret
+            SECRET_VALUE="${{ secrets[SECRET_KEY] }}"
+
+            # Value masking: if secret is unavailable, it'll be blank or '***'
+            if [ -z "$SECRET_VALUE" ] || [ "$SECRET_VALUE" == "***" ]; then
+              echo "::warning:: Secret '$SECRET_KEY' not found or not accessible. Skipping."
+              continue
+            fi
+
+            AWS_SECRET_ID="${SECRET_KEY}"
+            echo "Syncing '$SECRET_KEY' to AWS Secrets Manager as '$AWS_SECRET_ID'..."
+            
+            aws secretsmanager put-secret-value --secret-id "$AWS_SECRET_ID" --secret-string "$SECRET_VALUE"
+          done
