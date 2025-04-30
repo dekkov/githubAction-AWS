@@ -52,5 +52,13 @@ jobs:
             echo "::warning:: Secret '${{ matrix.secret_name }}' not found or not accessible. Skipping."
             exit 0
           fi
+      
           echo "Syncing '${{ matrix.secret_name }}' to AWS Secrets Manager as '$AWS_SECRET_ID'..."
-          aws secretsmanager put-secret-value --secret-id "$AWS_SECRET_ID" --secret-string "$SECRET_VALUE"
+      
+          if aws secretsmanager describe-secret --secret-id "$AWS_SECRET_ID" > /dev/null 2>&1; then
+            # If secret exists, update it
+            aws secretsmanager put-secret-value --secret-id "$AWS_SECRET_ID" --secret-string "$SECRET_VALUE"
+          else
+            # Create secret if it does not exist
+            aws secretsmanager create-secret --name "$AWS_SECRET_ID" --secret-string "$SECRET_VALUE"
+          fi
