@@ -1,4 +1,4 @@
-name: Sync Selected GitHub Secrets to AWS Secrets Manager
+name: Sync GitHub Secrets to AWS Secrets Manager
 
 on:
   workflow_dispatch:
@@ -10,46 +10,47 @@ on:
 
 
 jobs:
-  sync_secrets:
+  make-matrix:
     runs-on: ubuntu-latest
-
+    outputs:
+      secret_matrix: ${{ steps.set-matrix.outputs.secret_matrix }}
     steps:
+      - id: set-matrix
+        run: |
+          # Parse user input into a JSON array for matrix strategy
+          IFS=',' read -ra secrets <<< "${{ github.event.inputs.secret_names }}"
+          arr_json="["
+          for secret in "${secrets[@]}"; do
+            s=$(echo "$secret" | xargs) # trim whitespace
+            arr_json="$arr_json\"$s\","
+          done
+          arr_json="${arr_json%,}" # remove trailing comma
+          arr_json="$arr_json]"
+          echo "secret_matrix=$arr_json" >> $GITHUB_OUTPUT
 
-      # 1. Configure AWS credentials
+  sync_secret:
+    needs: make-matrix
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        secret_name: ${{ fromJson(needs.make-matrix.outputs.secret_matrix) }}
+    steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-west-2 # Change to your AWS region
+          aws-region: us-west-2  # Change as needed
 
-      # 2. Loop through secrets
-      - name: Sync selected secrets to AWS Secrets Manager
-        id: sync-secrets
-        shell: bash
+      - name: Sync secret to AWS Secrets Manager
         env:
-          INPUT_SECRET_NAMES: ${{ github.event.inputs.secret_names }}
+          SECRET_VALUE: ${{ secrets[ matrix.secret_name ] }}
+          AWS_SECRET_ID: ${{ github.event.inputs.aws_secret_prefix }}${{ matrix.secret_name }}
         run: |
-          set -e
-
-          # Prepare comma-separated list into an array
-          IFS=',' read -ra SECRETS <<< "$INPUT_SECRET_NAMES"
-
-          for SECRET_NAME in "${SECRETS[@]}"; do
-            # Remove whitespace
-            SECRET_KEY=$(echo "$SECRET_NAME" | xargs)
-
-            # Dynamically reference the GitHub Action secret
-            SECRET_VALUE="${{ secrets[SECRET_KEY] }}"
-
-            # Value masking: if secret is unavailable, it'll be blank or '***'
-            if [ -z "$SECRET_VALUE" ] || [ "$SECRET_VALUE" == "***" ]; then
-              echo "::warning:: Secret '$SECRET_KEY' not found or not accessible. Skipping."
-              continue
-            fi
-
-            AWS_SECRET_ID="${SECRET_KEY}"
-            echo "Syncing '$SECRET_KEY' to AWS Secrets Manager as '$AWS_SECRET_ID'..."
-            
-            aws secretsmanager put-secret-value --secret-id "$AWS_SECRET_ID" --secret-string "$SECRET_VALUE"
-          done
+          if [ -z "$SECRET_VALUE" ] || [ "$SECRET_VALUE" == "***" ]; then
+            echo "::warning:: Secret '${{ matrix.secret_name }}' not found or not accessible. Skipping."
+            exit 0
+          fi
+          echo "Syncing '${{ matrix.secret_name }}' to AWS Secrets Manager as '$AWS_SECRET_ID'..."
+          aws secretsmanager put-secret-value --secret-id "$AWS_SECRET_ID" --secret-string "$SECRET_VALUE"
