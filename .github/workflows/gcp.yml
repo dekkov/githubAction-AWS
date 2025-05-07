@@ -1,0 +1,79 @@
+name: Sync GitHub Secrets to Google Secret Manager
+
+on:
+  workflow_dispatch:
+    inputs:
+      secret_names:
+        description: 'Comma-separated list of GitHub secret names to sync (e.g., DB_PASSWORD,API_KEY)'
+        required: true
+        type: string
+      gcp_project_id:
+        description: 'GCP Project ID'
+        required: true
+        type: string
+      gcp_secret_prefix:
+        description: 'Prefix for Google Secret Manager secret names (optional)'
+        required: false
+        type: string
+
+jobs:
+  make-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      secret_matrix: ${{ steps.set-matrix.outputs.secret_matrix }}
+    steps:
+      - id: set-matrix
+        run: |
+          # Parse user input into a JSON array for matrix strategy
+          IFS=',' read -ra secrets <<< "${{ github.event.inputs.secret_names }}"
+          arr_json="["
+          for secret in "${secrets[@]}"; do
+            s=$(echo "$secret" | xargs) # trim whitespace
+            arr_json="$arr_json\"$s\","
+          done
+          arr_json="${arr_json%,}" # remove trailing comma
+          arr_json="$arr_json]"
+          echo "secret_matrix=$arr_json" >> $GITHUB_OUTPUT
+
+  sync_secret:
+    needs: make-matrix
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        secret_name: ${{ fromJson(needs.make-matrix.outputs.secret_matrix) }}
+    steps:
+      # 1. Authenticate to Google Cloud
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      # 2. Install gcloud
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      # 3. Sync secret to GCP Secret Manager
+      - name: Sync secret to Google Secret Manager
+        env:
+          SECRET_VALUE: ${{ secrets[ matrix.secret_name ] }}
+          GCP_PROJECT_ID: ${{ github.event.inputs.gcp_project_id }}
+          GCP_SECRET_ID: ${{ github.event.inputs.gcp_secret_prefix }}${{ matrix.secret_name }}
+        run: |
+          if [ -z "$SECRET_VALUE" ] || [ "$SECRET_VALUE" == "***" ]; then
+            echo "::warning:: Secret '${{ matrix.secret_name }}' not found or not accessible. Skipping."
+            exit 0
+          fi
+
+          # Set default project
+          gcloud config set project "$GCP_PROJECT_ID"
+
+          # Check if the secret exists
+          if gcloud secrets describe "$GCP_SECRET_ID" --project "$GCP_PROJECT_ID" >/dev/null 2>&1; then
+            echo "Adding new version to existing secret $GCP_SECRET_ID"
+            printf '%s' "$SECRET_VALUE" | gcloud secrets versions add "$GCP_SECRET_ID" --data-file=-
+          else
+            echo "Creating new secret $GCP_SECRET_ID"
+            gcloud secrets create "$GCP_SECRET_ID" --replication-policy="automatic"
+            printf '%s' "$SECRET_VALUE" | gcloud secrets versions add "$GCP_SECRET_ID" --data-file=-
+          fi
